@@ -1,1 +1,23 @@
-node_modules
+# dependencies
+node_modules/
+
+# build/runtime
+dist/
+outputs/
+uploads/
+
+# env
+.env
+
+# google cloud sdk
+google-cloud-sdk/
+
+# windows / installers
+*.exe
+*.bat
+*.ico
+install_mode
+
+# OS junk
+.DS_Store
+Thumbs.db

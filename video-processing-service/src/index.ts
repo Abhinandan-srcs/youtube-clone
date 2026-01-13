@@ -1,102 +1,93 @@
-import express, { Request, Response } from "express";
-import ffmpeg from "fluent-ffmpeg";
-import multer from "multer";
-import path from "path";
-import fs from "fs";
+import express from "express";
 
-// 🔴 IMPORTANT: Explicit FFmpeg paths (WSL)
-ffmpeg.setFfmpegPath("/usr/bin/ffmpeg");
-ffmpeg.setFfprobePath("/usr/bin/ffprobe");
+import {
+  setupDirectories,
+  downloadRawVideo,
+  convertVideo,
+  uploadProcessedVideo,
+  deleteRawVideo,
+  deleteProcessedVideo,
+  VideoResolution,
+} from "./storage";
+
+/* ────────────────────────────────
+   SETUP
+──────────────────────────────── */
+
+setupDirectories();
 
 const app = express();
+app.use(express.json());
 
-// --------------------
-// Multer configuration
-// --------------------
-const upload = multer({
-  dest: path.join(process.cwd(), "uploads"),
+/* ────────────────────────────────
+   VIDEO PROCESSING ENDPOINT
+   (Triggered by Cloud Pub/Sub)
+──────────────────────────────── */
+
+app.post("/process-video", async (req, res) => {
+  let fileName: string;
+
+  // 1️⃣ Parse Pub/Sub message
+  try {
+    const message = Buffer.from(
+      req.body.message.data,
+      "base64"
+    ).toString("utf8");
+
+    const data = JSON.parse(message);
+
+    if (!data.name) {
+      throw new Error("Missing filename in Pub/Sub payload");
+    }
+
+    fileName = data.name;
+  } catch (err) {
+    console.error("❌ Invalid Pub/Sub message", err);
+    return res.status(400).send("Bad Request");
+  }
+
+  console.log(`📥 Processing video: ${fileName}`);
+
+  // 2️⃣ Download raw video
+  try {
+    await downloadRawVideo(fileName);
+  } catch (err) {
+    console.error("❌ Failed to download raw video", err);
+    return res.status(500).send("Download failed");
+  }
+
+  const resolutions: VideoResolution[] = ["360p", "720p"];
+
+  // 3️⃣ Convert + upload for each resolution
+  try {
+    for (const reso of resolutions) {
+      console.log(`🎬 Converting to ${reso}`);
+
+      await convertVideo(fileName, fileName, reso);
+      await uploadProcessedVideo(fileName, reso);
+
+      await deleteProcessedVideo(fileName, reso);
+    }
+  } catch (err) {
+    console.error("❌ Video processing failed", err);
+
+    // Cleanup on failure
+    await deleteRawVideo(fileName);
+    return res.status(500).send("Processing failed");
+  }
+
+  // 4️⃣ Cleanup raw file
+  await deleteRawVideo(fileName);
+
+  console.log(`✅ Processing completed: ${fileName}`);
+  return res.status(200).send("Processing finished successfully");
 });
 
-// --------------------
-// Video processing API
-// --------------------
-app.post(
-  "/process-video",
-  upload.single("video"),
-  (req: Request, res: Response) => {
-    try {
-      if (!req.file) {
-        return res.status(400).send("No video file uploaded");
-      }
+/* ────────────────────────────────
+   SERVER
+──────────────────────────────── */
 
-      // Absolute directories
-      const uploadsDir = path.join(process.cwd(), "uploads");
-      const outputDir = path.join(process.cwd(), "outputs");
-
-      // Ensure directories exist
-      if (!fs.existsSync(uploadsDir)) {
-        fs.mkdirSync(uploadsDir, { recursive: true });
-      }
-
-      if (!fs.existsSync(outputDir)) {
-        fs.mkdirSync(outputDir, { recursive: true });
-      }
-
-      const inputFilePath = req.file.path;
-      const output360Path = path.join(outputDir, "output_360p.mp4");
-      const output720Path = path.join(outputDir, "output_720p.mp4");
-
-      console.log("Input:", inputFilePath);
-      console.log("360p Output:", output360Path);
-      console.log("720p Output:", output720Path);
-
-      // --------------------
-      // 360p conversion
-      // --------------------
-      ffmpeg(inputFilePath)
-        .outputOptions(["-vf", "scale=-2:360"])
-        .on("start", (cmd) => {
-          console.log("FFmpeg 360p command:", cmd);
-        })
-        .on("end", () => {
-          console.log("360p done");
-
-          // --------------------
-          // 720p conversion
-          // --------------------
-          ffmpeg(inputFilePath)
-            .outputOptions(["-vf", "scale=-2:720"])
-            .on("start", (cmd) => {
-              console.log("FFmpeg 720p command:", cmd);
-            })
-            .on("end", () => {
-              console.log("720p done");
-              res
-                .status(200)
-                .send("360p and 720p generated successfully");
-            })
-            .on("error", (err) => {
-              console.error("720p error:", err.message);
-              res.status(500).send(`720p error: ${err.message}`);
-            })
-            .save(output720Path);
-        })
-        .on("error", (err) => {
-          console.error("360p error:", err.message);
-          res.status(500).send(`360p error: ${err.message}`);
-        })
-        .save(output360Path);
-    } catch (err: any) {
-      console.error("Unexpected error:", err.message);
-      res.status(500).send("Unexpected server error");
-    }
-  }
-);
-
-// --------------------
-// Server start
-// --------------------
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
+  console.log(`🚀 Video processor running on port ${PORT}`);
 });
