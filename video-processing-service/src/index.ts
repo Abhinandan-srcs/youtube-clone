@@ -21,66 +21,57 @@ app.use(express.json());
 
 /* ────────────────────────────────
    VIDEO PROCESSING ENDPOINT
-   (Triggered by Cloud Pub/Sub)
 ──────────────────────────────── */
 
 app.post("/process-video", async (req, res) => {
   let fileName: string;
 
-  // 1️⃣ Parse Pub/Sub message
   try {
+    // Pub/Sub message format
     const message = Buffer.from(
       req.body.message.data,
       "base64"
-    ).toString("utf8");
+    ).toString("utf-8");
 
-    const data = JSON.parse(message);
+    const payload = JSON.parse(message);
 
-    if (!data.name) {
-      throw new Error("Missing filename in Pub/Sub payload");
+    if (!payload.name) {
+      throw new Error("Filename missing in Pub/Sub payload");
     }
 
-    fileName = data.name;
+    fileName = payload.name;
   } catch (err) {
     console.error("❌ Invalid Pub/Sub message", err);
-    return res.status(400).send("Bad Request");
+    return res.status(400).send("Invalid Pub/Sub payload");
   }
 
   console.log(`📥 Processing video: ${fileName}`);
 
-  // 2️⃣ Download raw video
   try {
+    // 1️⃣ Download
     await downloadRawVideo(fileName);
-  } catch (err) {
-    console.error("❌ Failed to download raw video", err);
-    return res.status(500).send("Download failed");
-  }
 
-  const resolutions: VideoResolution[] = ["360p", "720p"];
+    const resolutions: VideoResolution[] = ["360p", "720p"];
 
-  // 3️⃣ Convert + upload for each resolution
-  try {
+    // 2️⃣ Convert + Upload
     for (const reso of resolutions) {
-      console.log(`🎬 Converting to ${reso}`);
+      console.log(`🎬 Processing ${reso}`);
 
       await convertVideo(fileName, fileName, reso);
       await uploadProcessedVideo(fileName, reso);
-
       await deleteProcessedVideo(fileName, reso);
     }
-  } catch (err) {
-    console.error("❌ Video processing failed", err);
 
-    // Cleanup on failure
+    // 3️⃣ Cleanup raw file
+    await deleteRawVideo(fileName);
+
+    console.log(`✅ Processing completed: ${fileName}`);
+    return res.status(200).send("Processing successful");
+  } catch (err) {
+    console.error("❌ Processing failed", err);
     await deleteRawVideo(fileName);
     return res.status(500).send("Processing failed");
   }
-
-  // 4️⃣ Cleanup raw file
-  await deleteRawVideo(fileName);
-
-  console.log(`✅ Processing completed: ${fileName}`);
-  return res.status(200).send("Processing finished successfully");
 });
 
 /* ────────────────────────────────

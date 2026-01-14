@@ -8,11 +8,12 @@ import ffmpeg from "fluent-ffmpeg";
 
 const storage = new Storage();
 
-const RAW_BUCKET = "neetcode-yt-raw-videos";
-const PROCESSED_BUCKET = "neetcode-yt-processed-videos";
+const RAW_BUCKET = "ytclone-abhi-raw-videos";
+const PROCESSED_BUCKET = "ytclone-abhi-processed-videos";
 
-const RAW_DIR = "./raw-videos";
-const PROCESSED_DIR = "./processed-videos";
+// ⚠️ ONLY writable location in Cloud Run
+const RAW_DIR = "/tmp/raw-videos";
+const PROCESSED_DIR = "/tmp/processed-videos";
 
 export const VIDEO_RESOLUTIONS = {
   "360p": 360,
@@ -38,17 +39,18 @@ export function setupDirectories() {
 ──────────────────────────────── */
 
 export async function downloadRawVideo(fileName: string) {
-  await storage.bucket(RAW_BUCKET)
-    .file(fileName)
-    .download({
-      destination: `${RAW_DIR}/${fileName}`,
-    });
+  const destination = `${RAW_DIR}/${fileName}`;
 
-  console.log(`⬇️ Raw video downloaded: ${fileName}`);
+  await storage
+    .bucket(RAW_BUCKET)
+    .file(fileName)
+    .download({ destination });
+
+  console.log(`⬇️ Downloaded raw video → ${destination}`);
 }
 
 /* ────────────────────────────────
-   CONVERT (360p / 720p)
+   CONVERT
 ──────────────────────────────── */
 
 export function convertVideo(
@@ -58,18 +60,24 @@ export function convertVideo(
 ) {
   const height = VIDEO_RESOLUTIONS[resolution];
 
+  const inputPath = `${RAW_DIR}/${rawVideoName}`;
+  const outputPath = `${PROCESSED_DIR}/${resolution}/${processedVideoName}`;
+
   return new Promise<void>((resolve, reject) => {
-    ffmpeg(`${RAW_DIR}/${rawVideoName}`)
+    ffmpeg(inputPath)
       .outputOptions("-vf", `scale=-2:${height}`)
+      .on("start", (cmd) => {
+        console.log(`🎞️ FFmpeg started: ${cmd}`);
+      })
       .on("end", () => {
-        console.log(`✅ Converted ${rawVideoName} → ${resolution}`);
+        console.log(`✅ Converted → ${resolution}`);
         resolve();
       })
       .on("error", (err) => {
-        console.error("❌ FFmpeg error:", err);
+        console.error("❌ FFmpeg error", err);
         reject(err);
       })
-      .save(`${PROCESSED_DIR}/${resolution}/${processedVideoName}`);
+      .save(outputPath);
   });
 }
 
@@ -84,12 +92,11 @@ export async function uploadProcessedVideo(
   const localPath = `${PROCESSED_DIR}/${resolution}/${fileName}`;
   const destination = `${resolution}/${fileName}`;
 
-  const bucket = storage.bucket(PROCESSED_BUCKET);
+  await storage
+    .bucket(PROCESSED_BUCKET)
+    .upload(localPath, { destination });
 
-  await bucket.upload(localPath, { destination });
-  await bucket.file(destination).makePublic();
-
-  console.log(`⬆️ Uploaded: ${destination}`);
+  console.log(`⬆️ Uploaded → gs://${PROCESSED_BUCKET}/${destination}`);
 }
 
 /* ────────────────────────────────
@@ -108,7 +115,7 @@ export function deleteProcessedVideo(
 }
 
 /* ────────────────────────────────
-   INTERNAL UTILS
+   UTILS
 ──────────────────────────────── */
 
 function deleteFile(path: string): Promise<void> {
