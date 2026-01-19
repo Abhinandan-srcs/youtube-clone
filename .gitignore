@@ -1,1 +1,4 @@
-node_modules
+cloud_env.bat
+google-cloud-sdk/
+install_mode
+supercloud-16x16.ico
