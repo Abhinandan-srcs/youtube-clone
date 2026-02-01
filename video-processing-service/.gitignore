@@ -1,23 +1,23 @@
 # dependencies
 node_modules/
 
-# build/runtime
+# frontend build
 dist/
-outputs/
-uploads/
+build/
 
-# env
-.env
+# backend build
+lib/
 
-# google cloud sdk
+# firebase
+.firebase/
 google-cloud-sdk/
 
-# windows / installers
-*.exe
-*.bat
-*.ico
-install_mode
+# env / local files
+.env
+cloud_env.bat
 
-# OS junk
+# OS / IDE
+.vscode/
+.idea/
 .DS_Store
 Thumbs.db

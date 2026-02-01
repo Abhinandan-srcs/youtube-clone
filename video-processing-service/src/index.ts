@@ -82,3 +82,6 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 Video processor running on port ${PORT}`);
 });
+app.get("/", (req, res) => {
+  res.send("Video processing service is running");
+});

@@ -1,4 +1,22 @@
-cloud_env.bat
+# dependencies
+node_modules/
+
+# builds
+dist/
+build/
+lib/
+
+# firebase
+.firebase/
 google-cloud-sdk/
+
+# env / local files
+.env
+cloud_env.bat
+
+# OS / IDE
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
 install_mode
-supercloud-16x16.ico
