@@ -1,5 +1,11 @@
 {
-  "include": [
-    ".eslintrc.js"
-  ]
+  "compilerOptions": {
+    "module": "commonjs",
+    "target": "es2019",
+    "outDir": "lib",
+    "rootDir": "src",
+    "esModuleInterop": true,
+    "strict": true
+  },
+  "include": ["src"]
 }
